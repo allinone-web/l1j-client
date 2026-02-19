@@ -144,7 +144,7 @@ am__Admin_SOURCES_DIST = src/config.cpp src/connection.cpp \
 	src/encryption/sha256deep.c src/encryption/hash.c \
 	src/encryption/helpers.c src/encryption/sha256.c \
 	src/encryption/aes.c src/SDLMain.m
-@MAC_TRUE@am__objects_1 = SDLMain.$(OBJEXT)
+@MAC_TRUE@am__objects_1 =
 am_Admin_OBJECTS = config.$(OBJEXT) connection.$(OBJEXT) \
 	funcptr.$(OBJEXT) global.$(OBJEXT) lindes.$(OBJEXT) \
 	main.$(OBJEXT) packet.$(OBJEXT) packet_data.$(OBJEXT) \

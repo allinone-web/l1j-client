@@ -21,6 +21,8 @@
 
 #include "ecs/thing.h"
 
+#undef main
+
 static void install_runtime_logging()
 {
     char log_path[PATH_MAX];
