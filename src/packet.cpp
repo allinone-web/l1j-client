@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
 
@@ -13,13 +14,28 @@ static const int MAX_LENGTH = 0x13fe;
 
 void packet::send_packet(packet_data &sendme)
 {
-	while (key_initialized == 0)
+	while ((key_initialized == 0) && (modern_protocol == 0))
 	{	/** \todo Indicate to user that we are waiting on the server */
 		SDL_Delay(100);
 	}
 
+	if (modern_protocol != 0)
+	{
+		uint8_t opcode = sendme[0];
+		printf("[PKT][TX] local=0x%02x wire=0x%02x payload=%d (modern)\n", opcode, opcode, sendme.size());
+		if (sendme.size() > 0)
+		{
+			modern_encrypt(&sendme[0], sendme.size());
+		}
+		sendme.insert((uint16_t)(sendme.size()+2));
+		server->snd(sendme);
+		return;
+	}
+
 	//convert opcode before sending to the server
+	uint8_t local_opcode = sendme[0];
 	sendme[0] = theuser->convert_client_packets[sendme[0]];
+	printf("[PKT][TX] local=0x%02x wire=0x%02x payload=%d\n", local_opcode, (uint8_t)sendme[0], sendme.size());
 
 	//key for changing encryption is retrieved and put back
 	unsigned char key_change[4];
@@ -53,7 +69,19 @@ packet_data &packet::get_packet(bool translate)
 				data = std::vector<unsigned char>(packet_datas, packet_datas+packet_length);
 				delete [] packet_datas;
 				packet_datas = 0;
-				if (key_initialized == 1)
+				if ((modern_protocol == 0) && (packet_length > 0) && (data[0] == 0))
+				{
+					modern_protocol = 1;
+					key_initialized = 1;
+					modern_read_total = 0;
+					modern_write_total = 0;
+					printf("Detected modern protocol greeting (opcode 0), enabling rolling crypt\n");
+				}
+				if ((modern_protocol != 0) && (packet_length > 0))
+				{
+					modern_decrypt(&data[0], packet_length);
+				}
+				else if (key_initialized == 1)
 				{
 					this->decrypt(data);
 					char key_change[4];
@@ -62,13 +90,25 @@ packet_data &packet::get_packet(bool translate)
 					key_change[2] = data[2];
 					key_change[3] = data[3];
 					this->change_key(decryptionKey, key_change);
-				}	
+				}
 				if (translate)
 				{
 					uint8_t temp = data[0];
-					data[0] = theuser->convert_server_packets[temp];
-					if (data[0] == 255)
-						printf("A PACKET (%d) WAS untranslated\n", temp);
+					if (modern_protocol == 0)
+					{
+						data[0] = theuser->convert_server_packets[temp];
+						if (data[0] == 255)
+							printf("A PACKET (%d) WAS untranslated\n", temp);
+						printf("[PKT][RX] wire=0x%02x local=0x%02x payload=%u\n", temp, (uint8_t)data[0], packet_length);
+					}
+					else
+					{
+						printf("[PKT][RX] wire=0x%02x local=0x%02x payload=%u (modern)\n", temp, temp, packet_length);
+					}
+				}
+				else
+				{
+					printf("[PKT][RX] wire=0x%02x local=0x%02x payload=%u\n", (uint8_t)data[0], (uint8_t)data[0], packet_length);
 				}
 			}
 			else
@@ -161,12 +201,219 @@ void packet::decrypt(packet_data &dme)
 	}
 }
 
+void packet::modern_encrypt(unsigned char *body, int len)
+{
+	if ((body == 0) || (len <= 0))
+	{
+		return;
+	}
+	unsigned char size_temp[4];
+	size_temp[0] = (unsigned char)(modern_write_total & 0xFF);
+	size_temp[1] = (unsigned char)((modern_write_total >> 8) & 0xFF);
+	size_temp[2] = (unsigned char)((modern_write_total >> 16) & 0xFF);
+	size_temp[3] = (unsigned char)((modern_write_total >> 24) & 0xFF);
+	unsigned char *temp = new unsigned char[len];
+	memcpy(temp, body, len);
+	int idx = size_temp[0] & 0xFF;
+	for (int i = 0; i < len; i++)
+	{
+		if ((i > 0) && ((i % 8) == 0))
+		{
+			for (int j = 0; j < i; j++)
+			{
+				body[i] ^= temp[j];
+			}
+			if ((i % 16) == 0)
+			{
+				for (int k = 0; k < 4; k++)
+				{
+					body[i] ^= size_temp[k];
+				}
+			}
+			for (int j = 1; j < 4; j++)
+			{
+				body[i] ^= size_temp[j];
+			}
+			for (int j = 1; j < 4; j++)
+			{
+				if ((i + j) < len)
+				{
+					body[i + j] ^= size_temp[j];
+				}
+			}
+		}
+		else
+		{
+			body[i] ^= idx;
+			if (i == 0)
+			{
+				for (int j = 1; j < 4; j++)
+				{
+					if ((i + j) < len)
+					{
+						body[i + j] ^= size_temp[j];
+					}
+				}
+			}
+		}
+		idx = body[i] & 0xFF;
+	}
+	modern_write_total += len;
+	delete [] temp;
+}
+
+void packet::modern_decrypt(unsigned char *body, int len)
+{
+	if ((body == 0) || (len <= 0))
+	{
+		return;
+	}
+	unsigned char size_temp[4];
+	size_temp[0] = (unsigned char)(modern_read_total & 0xFF);
+	size_temp[1] = (unsigned char)((modern_read_total >> 8) & 0xFF);
+	size_temp[2] = (unsigned char)((modern_read_total >> 16) & 0xFF);
+	size_temp[3] = (unsigned char)((modern_read_total >> 24) & 0xFF);
+	unsigned char *temp = new unsigned char[len];
+	memcpy(temp, body, len);
+	int idx = size_temp[0] & 0xFF;
+	for (int i = 0; i < len; i++)
+	{
+		if ((i > 0) && ((i % 8) == 0))
+		{
+			for (int j = 0; j < i; j++)
+			{
+				body[i] ^= body[j];
+			}
+			if ((i % 16) == 0)
+			{
+				for (int k = 0; k < 4; k++)
+				{
+					body[i] ^= size_temp[k];
+				}
+			}
+			for (int j = 1; j < 4; j++)
+			{
+				body[i] ^= size_temp[j];
+			}
+			for (int j = 1; j < 4; j++)
+			{
+				if ((i + j) < len)
+				{
+					body[i + j] ^= size_temp[j];
+				}
+			}
+		}
+		else
+		{
+			body[i] ^= idx;
+			if (i == 0)
+			{
+				for (int j = 1; j < 4; j++)
+				{
+					if ((i + j) < len)
+					{
+						body[i + j] ^= size_temp[j];
+					}
+				}
+			}
+		}
+		idx = temp[i] & 0xFF;
+	}
+	modern_read_total += len;
+	delete [] temp;
+}
+
+void packet::modern_send_login()
+{
+	if (modern_login_sent != 0)
+	{
+		return;
+	}
+	packet_data sendme;
+	sendme << (uint8_t)1 << modern_account << modern_password;
+	send_packet(sendme);
+	modern_login_sent = 1;
+	printf("Modern login sent for account \"%s\"\n", modern_account);
+}
+
+void packet::modern_send_enter_world(const char *char_name)
+{
+	if (modern_enter_sent != 0)
+	{
+		return;
+	}
+	if ((char_name == 0) || (char_name[0] == 0))
+	{
+		return;
+	}
+	packet_data sendme;
+	sendme << (uint8_t)5 << char_name;
+	send_packet(sendme);
+	modern_enter_sent = 1;
+	printf("Modern enter-world sent for char \"%s\"\n", char_name);
+}
+
 packet::packet(connection *serve, sdl_user *blabla)
 {
 	//merely copy the existing connection so we can use it
 	server = serve;
 	mode = 0;
-	key_initialized = 0;
+	key_initialized = 1;
+	modern_protocol = 1;
+	modern_read_total = 0;
+	modern_write_total = 0;
+	modern_login_sent = 0;
+	modern_enter_sent = 0;
+	modern_char_count = 0;
+	modern_chars_seen = 0;
+	memset(modern_account, 0, sizeof(modern_account));
+	memset(modern_password, 0, sizeof(modern_password));
+	memset(modern_char_name, 0, sizeof(modern_char_name));
+	const char *account_env = getenv("LINEAGE_AUTO_ACCOUNT");
+	const char *password_env = getenv("LINEAGE_AUTO_PASSWORD");
+	const char *char_env = getenv("LINEAGE_AUTO_CHAR");
+	const char *modern_env = getenv("LINEAGE_MODERN_PROTOCOL");
+	const char *legacy_env = getenv("LINEAGE_LEGACY_PROTOCOL");
+	if ((account_env != 0) && (account_env[0] != 0))
+	{
+		strncpy(modern_account, account_env, sizeof(modern_account)-1);
+	}
+	else
+	{
+		strncpy(modern_account, "test001", sizeof(modern_account)-1);
+	}
+	if ((password_env != 0) && (password_env[0] != 0))
+	{
+		strncpy(modern_password, password_env, sizeof(modern_password)-1);
+	}
+	else
+	{
+		strncpy(modern_password, "111111", sizeof(modern_password)-1);
+	}
+	if ((char_env != 0) && (char_env[0] != 0))
+	{
+		strncpy(modern_char_name, char_env, sizeof(modern_char_name)-1);
+	}
+	else
+	{
+		strncpy(modern_char_name, "kkkk", sizeof(modern_char_name)-1);
+	}
+	if ((legacy_env != 0) && (atoi(legacy_env) != 0))
+	{
+		modern_protocol = 0;
+		key_initialized = 0;
+		printf("Legacy protocol forced by LINEAGE_LEGACY_PROTOCOL=%s\n", legacy_env);
+	}
+	else if ((modern_env != 0) && (atoi(modern_env) != 0))
+	{
+		modern_protocol = 1;
+		key_initialized = 1;
+		printf("Modern protocol forced by LINEAGE_MODERN_PROTOCOL=%s\n", modern_env);
+	}
+	else
+	{
+		printf("Modern protocol default enabled (set LINEAGE_LEGACY_PROTOCOL=1 for old servers)\n");
+	}
 	theuser = blabla;
 }
 
@@ -176,7 +423,7 @@ int packet::process_packet()
 		return 0;
 	if (key_initialized == 0)
 	{
-		if (data[0] != SERVER_KEY)
+		if ((data[0] != SERVER_KEY) && (data[0] != SERVER_VERSIONS) && (data[0] != 0))
 		{
 			printf("This server (%d) is not compatible with this client\n", data[0]);
 			return -1;
@@ -186,8 +433,89 @@ int packet::process_packet()
 	unsigned char temp;
 //	print_packet(0, data, "Received packet");
 	data >> temp;
+	if (modern_protocol != 0)
+	{
+		switch(temp)
+		{
+			case 0:
+				server_version_packet();
+				break;
+			case 2:
+				login_check();
+				break;
+			case 3:
+				num_char_packet();
+				break;
+			case 4:
+			case 5:
+				login_char_packet();
+				break;
+			case 7:
+			{
+				printf("Modern world-join ack received\n");
+				lin_char_info **chars = theuser->get_login_chars();
+				lin_char_info *picked_char = 0;
+				if (chars != 0)
+				{
+					for (int i = 0; i < 8; i++)
+					{
+						if ((chars[i] != 0) && (chars[i]->name != 0))
+						{
+							if ((modern_char_name[0] == 0) || (strcmp(chars[i]->name, modern_char_name) == 0))
+							{
+								picked_char = chars[i];
+								break;
+							}
+						}
+					}
+				}
+				theuser->change_drawmode(DRAWMODE_GAME);
+				theuser->wait_for_mode(DRAWMODE_GAME, true);
+				draw_game *tempest = (draw_game*)theuser->get_drawmode(false);
+				if (picked_char != 0)
+				{
+					tempest->set_selected_char(picked_char);
+				}
+				theuser->done_with_drawmode();
+				break;
+			}
+			case 11:
+				modern_object_add();
+				break;
+			case 12:
+				char_status();
+				break;
+			case 13:
+				update_hp();
+				break;
+			case 18:
+				move_object();
+				break;
+			case 21:
+				remove_object();
+				break;
+			case 28:
+				change_heading();
+				break;
+			case 33:
+				game_time();
+				break;
+			case 40:
+				set_map();
+				break;
+			case 77:
+				update_mp();
+				break;
+			default:
+				print_packet(temp, data, "modern unknown packet");
+				break;
+		}
+		data.clear();
+		return 0;
+	}
 	switch(temp)
 	{	//the second list
+		case 0:
 		case SERVER_VERSIONS: server_version_packet(); break;
 		case SERVER_DISCONNECT: return -1; break;
 		case SERVER_CHAR_STAT: char_status(); break;
@@ -476,6 +804,67 @@ void packet::remove_object()
 	}
 }
 
+void packet::modern_object_add()
+{
+	// Modern (182) S_ObjectAdd layout:
+	// H x, H y, D objId, H gfxId, C gfxMode, C heading, C light, C speed, D exp,
+	// H lawful, H partyId, S name, S title, C status, D clanId, S clanName, S ownerName,
+	// C, C hpRatio, C, C, S, C, C
+	if (data.size() < 20)
+	{
+		printf("Modern object add packet too short (%d)\n", data.size());
+		return;
+	}
+
+	uint16_t x, y, gfx_id, party_id;
+	uint32_t id, exp, clan_id;
+	int16_t lawful;
+	uint8_t gfx_mode, heading, light, speed, status;
+	uint8_t dummy0, hp_ratio, dummy1, dummy2, dummy3, dummy4;
+	char *name = 0;
+	char *title = 0;
+	char *clan_name = 0;
+	char *owner_name = 0;
+	char *extra_text = 0;
+
+	data >> x >> y >> id >> gfx_id >> gfx_mode >> heading >> light >> speed >> exp
+		 >> lawful >> party_id >> name >> title >> status >> clan_id >> clan_name
+		 >> owner_name >> dummy0 >> hp_ratio >> dummy1 >> dummy2 >> extra_text
+		 >> dummy3 >> dummy4;
+
+	printf("Modern object add: id=0x%x name=%s gfx=%u mode=%u head=%u pos=(%u,%u) hpRatio=%u\n",
+		id, (name != 0) ? name : "", gfx_id, gfx_mode, heading, x, y, hp_ratio);
+
+	if (theuser->is_in_mode(DRAWMODE_GAME, true))
+	{
+		draw_game *temp;
+		struct ground_item placeme;
+		temp = (draw_game*)(theuser->get_drawmode(false));
+		placeme.name = name;
+		placeme.x = x;
+		placeme.y = y;
+		placeme.emit_light = light;
+		placeme.heading = heading;
+		placeme.gnd_icon = gfx_id;
+		placeme.count = exp;
+		placeme.id = id;
+		temp->place_character(&placeme);
+		temp = 0;
+		theuser->done_with_drawmode();
+	}
+
+	delete [] name;
+	name = 0;
+	delete [] title;
+	title = 0;
+	delete [] clan_name;
+	clan_name = 0;
+	delete [] owner_name;
+	owner_name = 0;
+	delete [] extra_text;
+	extra_text = 0;
+}
+
 void packet::change_heading()
 {
 	uint32_t id;
@@ -683,6 +1072,11 @@ void packet::num_char_packet()
 	unsigned char num_characters;
 	unsigned char max_characters;
 	data >> num_characters >> max_characters;
+	if (modern_protocol != 0)
+	{
+		modern_char_count = num_characters;
+		modern_chars_seen = 0;
+	}
 	
 	if (max_characters == 0)
 	{
@@ -709,6 +1103,23 @@ void packet::login_char_packet()
 	data >> name >> pledge >> type >> gender >> alignment
 		 >> hp >> mp >> ac >> level
 		 >> str >> dex >> con >> wis >> cha >> intl;
+	if (modern_protocol != 0)
+	{
+		modern_chars_seen++;
+		if ((modern_char_name[0] == 0) || (strcmp(modern_char_name, name) == 0))
+		{
+			if (modern_char_name[0] == 0)
+			{
+				strncpy(modern_char_name, name, sizeof(modern_char_name)-1);
+			}
+			modern_send_enter_world(name);
+		}
+		else if ((modern_chars_seen >= modern_char_count) && (modern_char_count > 0))
+		{
+			printf("Configured auto char \"%s\" not found, falling back to listed char \"%s\"\n", modern_char_name, name);
+			modern_send_enter_world(name);
+		}
+	}
 	
 	lin_char_info *temp;
 	temp = new lin_char_info;
@@ -734,6 +1145,11 @@ void packet::login_check()
 {
 	unsigned char result;
 	data >> result;
+	if (modern_protocol != 0)
+	{
+		printf("Modern login status code: %d\n", result);
+		return;
+	}
 	
 	switch (result)
 	{
@@ -839,6 +1255,10 @@ void packet::server_version_packet()
 			 >> npcVersion >> serverStartTime >> canMakeNewAccount >> englishOnly;
 	}
 	data >> countryCode;
+	if (modern_protocol != 0)
+	{
+		modern_send_login();
+	}
 	
 	unsigned short serverId = (countryCode<<8) + serverCode;
 	//TODO : move these to an actual loading function
@@ -945,4 +1365,3 @@ void packet::server_version_packet()
 //	LoadEmblemFile(serverId);
 	return;
 }
-

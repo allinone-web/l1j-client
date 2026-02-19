@@ -51,6 +51,16 @@ int table::compare(const void *a, const void *b)
 {
 	const char **aa = (const char**)a;
 	const char **ba = (const char**)b;
+	if (*aa == 0)
+	{
+		if (*ba == 0)
+			return 0;
+		return 1;
+	}
+	if (*ba == 0)
+	{
+		return -1;
+	}
 	return strcmp(*aa, *ba);
 }
 
@@ -82,10 +92,26 @@ void table::load(const char *real_name, files *place, file_locations location)
 	char *buffer;
 	int size;
 	buffer = (char*)place->load_file(real_name, &size, location, 1);
+	if (buffer == 0)
+	{
+		printf("Table file %s could not be loaded\n", real_name);
+		num_entries = 0;
+		entries = 0;
+		return;
+	}
 
 	char* temp_entry;
 	char delimiters[] = {0x0d, 0x0a, 0};
 	temp_entry = strtok(buffer, delimiters);
+	if (temp_entry == 0)
+	{
+		printf("Table file %s is empty\n", real_name);
+		num_entries = 0;
+		entries = 0;
+		delete [] buffer;
+		buffer = 0;
+		return;
+	}
 	num_entries = atoi(temp_entry);
 	if (num_entries == 0)
 	{

@@ -59,8 +59,8 @@ int pack::load_index()
 	index_buf = fopen(index_file, "rb");
 	if (index_buf == 0)
 	{
-		printf("Unable to open file %s\n", index_file);
-		return 1;
+		printf("Failed to open index file: %s (absolute path: %s)\n", index_file, index_file); // Enhanced logging
+		return 0;
 	}
 	int size1;
 	fseek(index_buf, 0, SEEK_END);
@@ -78,7 +78,7 @@ int pack::load_index()
 		#endif
 		if (size1 != size2)
 		{
-			printf("Size mismatch (%d) (%d)\n", size1, size2);
+			printf("Size mismatch in index file %s: header size %d, calculated size %d\n", index_file, size1, size2); // Enhanced logging
 			return 1;
 		}
 	}
@@ -155,16 +155,18 @@ int pack::load_index()
 		if (files[i].offset >= size_data)
 		{
 			num_invalid++;
+			printf("Invalid file entry %s: offset %d >= data file size %d\n", files[i].name, files[i].offset, size_data); // Enhanced logging
 		}
 		else if ((files[i].offset + files[i].size) > size_data)
 		{
 			num_invalid++;
+			printf("Invalid file entry %s: offset %d + size %d > data file size %d\n", files[i].name, files[i].offset, files[i].size, size_data); // Enhanced logging
 		}
 		//check offset is valid
 		//size+offset not too large
 	}
 	if (num_invalid > 0)
-		printf("\tThere were %d invalid file entries detected\n", num_invalid);
+		printf("\tThere were %d invalid file entries detected in %s\n", num_invalid, index_file); // Enhanced logging
 
 	return 0;
 }
@@ -344,7 +346,6 @@ char *pack::load_file(const char *name, int *size, int decrypting)
 	}
 	else
 	{
-//		printf("File %s not found in %s\n", name, index_file);
 		ret_buf = (char*)0;
 	}
 	return ret_buf;

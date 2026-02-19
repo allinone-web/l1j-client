@@ -65,6 +65,7 @@ class sdl_lin_map : public sdl_widget
 		void set_hotspot(int mapn, int x, int y);	//sets the coordinates for the hotspot (the middle of the screen)
 		void draw_info(SDL_Surface *display, int x, int y);
 		tile *tile_data;	//used for reference only
+		int number_map_tiles;
 		int get_offset_x();	/**< Returns the calculated offset for this map */
 		int get_offset_y();	/**< Returns the calculated offset for this map */
 		void check_sections(sdl_user *from);	/**< Check the loaded sections whenever the map gets moved */

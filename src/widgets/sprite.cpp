@@ -19,12 +19,26 @@ void sprite::load_sprite_gfx(unsigned int id)
 	//check for and load generic resource
 	//check for and load server-specific resource
 	base_resource<sprite_motion> generic_gfx;
+	unsigned int base_id = (id >> 16) & 0xFFFF;
+	unsigned int sub_id = id & 0xFFFF;
 	if (generic_gfx[id].is_loaded() == 0)
 	{
 		char filename[100];
 		sprintf(filename, "%d-%d.spr", (id>>16)&0xFFFF, id&0xFFFF);
+		if ((base_id == 37) || (base_id == 168) || (base_id == 450))
+		{
+			printf("[SPR] request load %s\n", filename);
+		}
 		//printf("Loading %s\n", filename);
 		generic_gfx[id].load(0, 0, filename, myclient);
+		if ((base_id == 37) || (base_id == 168) || (base_id == 450))
+		{
+			printf("[SPR] load %s result=%s\n", filename, generic_gfx[id].is_loaded() ? "ok" : "missing");
+		}
+	}
+	else if ((base_id == 37) || (base_id == 168) || (base_id == 450))
+	{
+		printf("[SPR] cached %u-%u.spr\n", base_id, sub_id);
 	}
 }
 
@@ -173,13 +187,11 @@ void sprite::load_generic_sprite_data()
 					while (isspace(sprite_data[offset])) { offset++; }
 					temp = atoi((char*)&sprite_data[offset]);
 					while (isdigit(sprite_data[offset])) { offset++; }
-					printf("Sprite %d has %d pieces of clothing\n",spr_num, temp);
 					for (int i = 0; i < temp; i++)
 					{
 						while (isspace(sprite_data[offset])) { offset++; }
 						int temp2 =atoi((char*)&sprite_data[offset]);
 						while (isdigit(sprite_data[offset])) { offset++; }
-						printf("\t%d\n",temp2);
 					}
 					break;
 				case 106: //weapons apparently unused
@@ -227,7 +239,6 @@ void sprite::load_generic_sprite_data()
 					if (temp == 0)
 						temp = 25;
 					(*sprite_defs)[spr_num].mspf = 1000/temp;
-					printf("mspdf for sprite %d is %d\n",spr_num, temp);
 					break;
 				case 111: //stride
 					//read one number
@@ -392,6 +403,11 @@ void sprite::load(int x, int y, int sprnum)
 	//check to see that all the proper sprite_motions are loaded
 	cur_action = 3;
 	sprite_num = sprnum;
+	if (sprnum == 37)
+	{
+		int stand_frames = myclient->sprite_data[sprnum].actions[3].num_frames;
+		printf("[PLAYER-SPR] sprite 37 loaded, action3_frames=%d\n", stand_frames);
+	}
 	for (int i = 0; i < 72; i++)
 	{
 		int j;

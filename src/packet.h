@@ -25,12 +25,27 @@ class packet
 		char encryptionKey[8];
 		int mode;	//what mode is packet decoding in?
 		volatile int key_initialized;
+		volatile int modern_protocol;
+		unsigned int modern_read_total;
+		unsigned int modern_write_total;
+		int modern_login_sent;
+		int modern_enter_sent;
+		int modern_char_count;
+		int modern_chars_seen;
+		char modern_account[64];
+		char modern_password[64];
+		char modern_char_name[64];
 		connection *server;
 		sdl_user *theuser;
 		packet_data data;
 
 		void encrypt(packet_data &eme);
 		void decrypt(packet_data &dme);
+		void modern_encrypt(unsigned char *body, int len);
+		void modern_decrypt(unsigned char *body, int len);
+		void modern_send_login();
+		void modern_send_enter_world(const char *char_name);
+		void modern_object_add();
 		void change_key(char *key, const char *data);	//changes the encryption key
 		void create_key(const unsigned int seed);
 		

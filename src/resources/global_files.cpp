@@ -11,20 +11,14 @@ int global_files::num_sprite_pack = 0;
 
 void global_files::init()
 {
-	num_sprite_pack = 17;
+	num_sprite_pack = 1;
 	textpack = new pack("Text", 1);
 	tilepack = new pack("Tile", 0);
 	spritepack = new pack*[num_sprite_pack];
 	spritepack[0] = new pack("Sprite", 0);
-	for (int i = 0; i < (num_sprite_pack-1); i++)
-	{
-		char name[10];
-		sprintf(name, "Sprite%02d", i);
-		spritepack[i+1] = new pack(name, 0);
-		//new_surf_pack and spritepack are the same thing
+	//new_surf_pack and spritepack are the same thing
 		//new_icon_pack and spritepack are the same thing
 		//spriteFile is simply the first element of spritepack
-	}
 	//TODO: verify all packs were loaded successfully
 }
 
@@ -39,7 +33,7 @@ void global_files::list_files(file_locations location)
 			spritepack[0]->list_files();
 			break;
 		case FILE_SPRITESPACK:
-			for (int i = 0; i < 16; i++)
+			for (int i = 0; i < num_sprite_pack; i++)
 			{
 				spritepack[i]->list_files();
 			}
@@ -113,8 +107,7 @@ int global_files::check_file(const char *name, file_locations location)
 			break;
 		case FILE_SPRITESPACK:
 			{
-			int index = getHashIndex(name) + 1;
-			return spritepack[index]->check_file(name);
+			return spritepack[0]->check_file(name);
 			}
 			break;
 		case FILE_TEXTPACK:
@@ -200,8 +193,7 @@ unsigned char* global_files::load_file(const char *name, int *size, file_locatio
 			break;
 		case FILE_SPRITESPACK:
 			{
-			int index = getHashIndex(name) + 1;
-			buffer = (unsigned char*)spritepack[index]->load_file(name, size, decrypting);
+			buffer = (unsigned char*)spritepack[0]->load_file(name, size, decrypting);
 			}
 			break;
 		case FILE_TEXTPACK:
@@ -220,4 +212,3 @@ unsigned char* global_files::load_file(const char *name, int *size, file_locatio
 //		printf("File %s was loaded properly\n", name);
 	return buffer;
 }
-

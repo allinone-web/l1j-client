@@ -20,3 +20,4 @@ libs/*
 autom4te.cache/*
 not_in_repo/*
 rust/target/*
+/build_modern

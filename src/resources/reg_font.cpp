@@ -33,9 +33,24 @@ bool reg_font::init(const char *name, sdl_user *who)
 
 	final = SDL_CreateRGBSurface(SDL_SWSURFACE, 96, 72, 16,
 		0x7C00, 0x03E0, 0x001F, 0);
+	if (final == 0)
+	{
+		printf("ERROR: reg_font::init failed to create destination surface for %s\n", name);
+		return false;
+	}
 
 	unsigned char *buffer;
 	buffer = (unsigned char*)(who->getfiles->load_file(name, 0, FILE_REGULAR1, 0));
+	if (buffer == 0)
+	{
+		buffer = (unsigned char*)(who->getfiles->load_file(name, 0, FILE_TEXTPACK, 0));
+	}
+	if (buffer == 0)
+	{
+		printf("ERROR: reg_font::init failed to load font file %s\n", name);
+		SDL_FillRect(final, NULL, SDL_MapRGB(final->format, COLORKEY));
+		return false;
+	}
 	
 	short *new_buf = new short[6*12*95];
 	

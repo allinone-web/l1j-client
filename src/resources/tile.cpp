@@ -89,6 +89,12 @@ sdl_graphic *tile::get_tile_right(int which)
 	sdl_graphic *ret;
 	if (tdata != 0)
 	{
+		if ((which < 0) || (which >= tdata->num_tiles))
+		{
+			ret = 0;
+			SDL_mutexV(delay_mtx);
+			return ret;
+		}
 		if (tdata->rtile[which] == 0)
 		{
 			if ((tdata->data[tdata->offset[which]] & 2) != 0)
@@ -121,6 +127,12 @@ sdl_graphic *tile::get_tile_left(int which)
 	sdl_graphic *ret;
 	if (tdata != 0)
 	{
+		if ((which < 0) || (which >= tdata->num_tiles))
+		{
+			ret = 0;
+			SDL_mutexV(delay_mtx);
+			return ret;
+		}
 		if (tdata->ltile[which] == 0)
 		{
 			if ((tdata->data[tdata->offset[which]] & 2) != 0)
@@ -153,6 +165,12 @@ sdl_graphic *tile::get_special(int which)
 	sdl_graphic *ret;
 	if (tdata != 0)
 	{
+		if ((which < 0) || (which >= tdata->num_tiles))
+		{
+			ret = 0;
+			SDL_mutexV(delay_mtx);
+			return ret;
+		}
 		if (tdata->stile[which] == 0)
 		{
 			short *source = (short*)&tdata->data[tdata->offset[which]+1];

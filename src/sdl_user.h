@@ -121,6 +121,7 @@ class sdl_user
 		void login(const char *name, const char *pass); /**< login to the game server */
 
 		tile *get_tiles();	/**< Retrieve the list of tiles. */
+		int get_num_map_tiles();	/**< Retrieve how many tile sets were discovered in Tile.idx. */
 
 		void wait_for_mode(enum drawmode wait, bool mutex);	/**< wait for the client to be in the given drawmode */
 		bool is_in_mode(enum drawmode here, bool mutex);	/**< is the client in the given drawmode */

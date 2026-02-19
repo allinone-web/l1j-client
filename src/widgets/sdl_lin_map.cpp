@@ -17,6 +17,7 @@ sdl_lin_map::sdl_lin_map(sdl_user *who, int x, int y, int w, int h)
 	: sdl_widget(x, y, who)
 {
 	tile_data = who->get_tiles();
+	number_map_tiles = who->get_num_map_tiles();
 	edit_mtx = SDL_CreateMutex();
 	one = 0;
 	
@@ -107,10 +108,8 @@ void sdl_lin_map::handle_s32(SDL_RWops *sdl_buf, lin_map_segment *ret, int mapnu
 	{
 		for (int ty = 0; ty < 64; ty++)
 		{
-			SDL_RWread(sdl_buf, &(ret->mapdata->floor[ty][tx*2]), 4, 1);
-			ret->mapdata->floor[ty][tx*2] = SWAP32(ret->mapdata->floor[ty][tx*2]);
-			SDL_RWread(sdl_buf, &(ret->mapdata->floor[ty][tx*2+1]), 4, 1);
-			ret->mapdata->floor[ty][tx*2+1] = SWAP32(ret->mapdata->floor[ty][tx*2+1]);
+			SDL_RWread(sdl_buf, &(ret->mapdata->floor[tx][ty*2]), 4, 1);
+			SDL_RWread(sdl_buf, &(ret->mapdata->floor[tx][ty*2+1]), 4, 1);
 		}
 	}
 	
@@ -266,6 +265,15 @@ void sdl_lin_map::handle_s32(SDL_RWops *sdl_buf, lin_map_segment *ret, int mapnu
 	beg_y = y & (int)~0x3F;
 	
 	ret->graphic = new sdl_graphic(0, 0, 3072, 1535, 0);
+	int terrain_left_drawn = 0;
+	int terrain_right_drawn = 0;
+	int terrain_left_missing = 0;
+	int terrain_right_missing = 0;
+	int terrain_left_bad_tileset = 0;
+	int terrain_right_bad_tileset = 0;
+	int object_special_drawn = 0;
+	int object_special_missing = 0;
+	int object_special_bad_tileset = 0;
 	
 	//draw all the tiles for the map section
 	int offsetx, offsety;
@@ -288,19 +296,49 @@ void sdl_lin_map::handle_s32(SDL_RWops *sdl_buf, lin_map_segment *ret, int mapnu
 			
 			selar = ret->mapdata->floor[tx][ty*2+1]>>8;
 			selbr = ret->mapdata->floor[tx][ty*2+1] & 0xFF;
-			
-			tile_data[selal].load(selal, from);
-			tile_data[selar].load(selar, from);
+
+			left = 0;
+			right = 0;
+			if ((selal >= 0) && (selal < number_map_tiles))
+			{
+				tile_data[selal].load(selal, from);
+				left = tile_data[selal].get_tile_left(selbl);
+			}
+			else
+			{
+				terrain_left_bad_tileset++;
+			}
+			if ((selar >= 0) && (selar < number_map_tiles))
+			{
+				tile_data[selar].load(selar, from);
+				right = tile_data[selar].get_tile_right(selbr);
+			}
+			else
+			{
+				terrain_right_bad_tileset++;
+			}
 			
 			dx = tempmap.get_screen().get_x() + offsetx;
 			dy = tempmap.get_screen().get_y() + offsety;
-			left = tile_data[selal].get_tile_left(selbl);
-			right = tile_data[selar].get_tile_right(selbr);
 			
 			if (left != 0)
+			{
 				left->drawat(dx, dy, ret->graphic->get_surf());
+				terrain_left_drawn++;
+			}
+			else
+			{
+				terrain_left_missing++;
+			}
 			if (right != 0)
+			{
 				right->drawat(dx+24, dy, ret->graphic->get_surf());
+				terrain_right_drawn++;
+			}
+			else
+			{
+				terrain_right_missing++;
+			}
 		}
 	}
 #if 1
@@ -317,8 +355,16 @@ void sdl_lin_map::handle_s32(SDL_RWops *sdl_buf, lin_map_segment *ret, int mapnu
 			int selal, selbl;
 			selal = floor>>8;
 			selbl = floor & 0xFF;
-
-			tile_data[selal].load(selal, from);
+			left = 0;
+			if ((selal >= 0) && (selal < number_map_tiles))
+			{
+				tile_data[selal].load(selal, from);
+				left = tile_data[selal].get_special(selbl);
+			}
+			else
+			{
+				object_special_bad_tileset++;
+			}
 
 			dx = tempmap.get_screen().get_x() + offsetx;
 			dy = tempmap.get_screen().get_y() + offsety;
@@ -326,10 +372,15 @@ void sdl_lin_map::handle_s32(SDL_RWops *sdl_buf, lin_map_segment *ret, int mapnu
 			{
 				dx += 24;
 			}
-			left = tile_data[selal].get_special(selbl);
-			
 			if (left != 0)
+			{
 				left->drawat(dx, dy, ret->graphic->get_surf());
+				object_special_drawn++;
+			}
+			else
+			{
+				object_special_missing++;
+			}
 		}
 	}
 #endif
@@ -338,6 +389,11 @@ void sdl_lin_map::handle_s32(SDL_RWops *sdl_buf, lin_map_segment *ret, int mapnu
 	ret->y = y & (~0x3F);
 	ret->offsetx = offsetx;
 	ret->offsety = offsety;
+	printf("[MAP-RENDER] map=%d tile=(%d,%d) terrain L:%d ok/%d miss/%d badset R:%d ok/%d miss/%d badset obj:%d ok/%d miss/%d badset\n",
+		mapnum, ret->x, ret->y,
+		terrain_left_drawn, terrain_left_missing, terrain_left_bad_tileset,
+		terrain_right_drawn, terrain_right_missing, terrain_right_bad_tileset,
+		object_special_drawn, object_special_missing, object_special_bad_tileset);
 #endif
 //	printf("\t%s %d_%d_%d\n", name, mapnum, ret->x, ret->y);
 	
@@ -380,6 +436,10 @@ void sdl_lin_map::move_sprite(uint32_t id, int x, int y, int sprite_num, int hea
 	{
 		sprite *temp = new sprite(x, y, myclient);
 		printf("Place sprite 0x%x at %d, %d\n", id, x, y);
+		if (sprite_num == 37)
+		{
+			printf("[PLAYER-SPR] create sprite id=0x%x sprite_num=37 at (%d,%d)\n", id, x, y);
+		}
 		temp->load(x, y, sprite_num);
 		temp->move(x, y, heading);
 		sprites_on_map[id] = temp;
@@ -430,11 +490,12 @@ lin_map_segment sdl_lin_map::get_map(int mapnum, int x, int y, sdl_user *from)
 			SDL_RWclose(sdl_buf);
 			delete [] buffer;
 			buffer = 0;
+			printf("[MAP] loaded seg %s for map=%d tile=(%d,%d)\n", name, mapnum, beg_x2, beg_y2);
 		}
 		else
 		{
-			//printf("This map section %d, %d does not exist\n",
-			//	   beg_x2, beg_y2);
+			printf("[MAP] missing section map=%d tile=(%d,%d) (%04x%04x)\n",
+				mapnum, beg_x2, beg_y2, modx, mody);
 			ret.graphic = 0;
 			ret.mapdata = 0;
 			ret.map = 0;
@@ -451,6 +512,7 @@ lin_map_segment sdl_lin_map::get_map(int mapnum, int x, int y, sdl_user *from)
 		SDL_RWclose(sdl_buf);	
 		delete [] buffer;
 		buffer = 0;
+		printf("[MAP] loaded s32 %s for map=%d tile=(%d,%d)\n", name, mapnum, beg_x2, beg_y2);
 	}
 	return ret;
 }
@@ -607,14 +669,18 @@ void sdl_lin_map::draw_cursor(int x, int y, SDL_Surface *display)
 
 void sdl_lin_map::draw(SDL_Surface *display)
 {
+	static Uint32 last_render_log = 0;
+	static bool dumped_map_surface = false;
 	while (SDL_mutexP(edit_mtx) == -1) {};
 	SDL_FillRect(one->get_surf(), NULL, 0);
+	int loaded_segments = 0;
 	for (int i = 0; i < 4; i++)
 	{
 		int temp_offx, temp_offy;
 			
 		if (segs[i].graphic != 0)
 		{
+			loaded_segments++;
 			temp_offx = master_offsetx - segs[i].offsetx;
 			temp_offy = master_offsety - segs[i].offsety;
 			segs[i].graphic->drawat(temp_offx, temp_offy, one->get_surf());
@@ -635,7 +701,20 @@ void sdl_lin_map::draw(SDL_Surface *display)
 			i->second->drawat(dx+24, dy-36, one->get_surf());
 		}
 	}
+	if (!dumped_map_surface && (map == 69) && (loaded_segments > 0) && (sprites_on_map.size() > 0))
+	{
+		SDL_SaveBMP(one->get_surf(), "debug_map_surface.bmp");
+		printf("[RENDER-DUMP] wrote debug_map_surface.bmp (map=%d segments=%d sprites=%lu)\n",
+			map, loaded_segments, (unsigned long)sprites_on_map.size());
+		dumped_map_surface = true;
+	}
 	sdl_widget::draw(display);
+	if ((SDL_GetTicks() - last_render_log) > 1000)
+	{
+		printf("[RENDER] map=%d loaded_segments=%d sprites=%lu master_offset=(%d,%d)\n",
+			map, loaded_segments, (unsigned long)sprites_on_map.size(), master_offsetx, master_offsety);
+		last_render_log = SDL_GetTicks();
+	}
 	
 	SDL_mutexV(edit_mtx);
 }

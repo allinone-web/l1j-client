@@ -9,12 +9,14 @@
 #define INDEX_EXT ".idx"
 #define TEMP_EXT ".$$$"
 
+#pragma pack(push, 1) // Ensure 1-byte alignment for file_entry struct
 struct file_entry
 {
 	int offset;
 	char name[20];
 	int size;
 };
+#pragma pack(pop) // Restore previous alignment settings
 
 int getHashIndex(const char *name);
 

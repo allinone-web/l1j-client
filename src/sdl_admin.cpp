@@ -103,6 +103,11 @@ tile *sdl_user::get_tiles()
 	return map_tiles;
 }
 
+int sdl_user::get_num_map_tiles()
+{
+	return number_map_tiles;
+}
+
 void sdl_user::mouse_to(SDL_MouseMotionEvent *to)
 {
 	while (SDL_mutexP(draw_mtx) == -1) {};

@@ -1,6 +1,7 @@
 #include <SDL/SDL.h>
 #include <SDL/SDL_image.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "sdl_master.h"
 #include "sdl_user.h"
@@ -26,11 +27,25 @@ sdl_master::sdl_master(Uint32 flags)
 	}
 	else
 	{
+#ifdef MAC
+		flags = SDL_SWSURFACE;
+#endif
 		display = SDL_SetVideoMode(SCREEN_WIDTH, SCREEN_HEIGHT, 16, flags);
 		SDL_EnableKeyRepeat(SDL_DEFAULT_REPEAT_DELAY, SDL_DEFAULT_REPEAT_INTERVAL);
 		if (display == NULL) 
 		{
-			fprintf(stderr, "Unable to set video mode: %s\n", SDL_GetError());
+			fprintf(stderr, "Unable to set video mode with flags 0x%x: %s\n", flags, SDL_GetError());
+			// Fallback for newer macOS/driver combinations that reject HWSURFACE settings.
+			display = SDL_SetVideoMode(SCREEN_WIDTH, SCREEN_HEIGHT, 0, SDL_SWSURFACE);
+			if (display == NULL)
+			{
+				fprintf(stderr, "Fallback video mode failed: %s\n", SDL_GetError());
+			}
+			else
+			{
+				SDL_WM_SetCaption("Lineage", "Lineage");
+				ready = 1;
+			}
 		}
 		else
 		{
@@ -46,9 +61,18 @@ void sdl_master::create_client()
 {	
 	if (game_client[0] == 0)
 	{
-		cdisplay[0] = SDL_CreateRGBSurface(SDL_SWSURFACE,
-							SCREEN_WIDTH, SCREEN_HEIGHT, 16,
-							0x7C00, 0x03E0, 0x001F, 0);
+		if (display != 0)
+		{
+			cdisplay[0] = SDL_CreateRGBSurface(SDL_SWSURFACE,
+								SCREEN_WIDTH, SCREEN_HEIGHT, display->format->BitsPerPixel,
+								display->format->Rmask, display->format->Gmask, display->format->Bmask, display->format->Amask);
+		}
+		if (cdisplay[0] == 0)
+		{
+			cdisplay[0] = SDL_CreateRGBSurface(SDL_SWSURFACE,
+								SCREEN_WIDTH, SCREEN_HEIGHT, 16,
+								0x7C00, 0x03E0, 0x001F, 0);
+		}
 		clients[0] = new sdl_user;
 		game_client[0] = SDL_CreateThread(run_client, (void*)clients[0]);
 		while (!clients[0]->are_you_ready()) {};
@@ -104,7 +128,12 @@ void sdl_master::process_events()
 					break;
 				case SDL_VIDEORESIZE: //User resized window
 					display = SDL_SetVideoMode(event.resize.w, event.resize.h, 16,
-						SDL_HWSURFACE | SDL_DOUBLEBUF); // Create new window
+#ifdef MAC
+						SDL_SWSURFACE
+#else
+						SDL_HWSURFACE | SDL_DOUBLEBUF
+#endif
+					); // Create new window
 					break;
 			}
 		}
@@ -169,15 +198,64 @@ void sdl_master::add_draw_timer(int ms)
 void sdl_master::draw()
 {
 	SDL_Rect rect;
+	static bool dumped_display_surfaces = false;
 	if (clients[0] != 0)
 	{
+#ifdef MAC
+		clients[0]->draw(display);
+		if (!dumped_display_surfaces && (access("debug_map_surface.bmp", F_OK) == 0))
+		{
+			SDL_SaveBMP(display, "debug_display_direct_preupdate.bmp");
+		}
+		SDL_UpdateRect(display, 0, 0, 0, 0);
+		if (!dumped_display_surfaces && (access("debug_map_surface.bmp", F_OK) == 0))
+		{
+			SDL_SaveBMP(display, "debug_display_direct_postupdate.bmp");
+			printf("[RENDER-DUMP] wrote debug_display_direct_preupdate.bmp and debug_display_direct_postupdate.bmp\n");
+			dumped_display_surfaces = true;
+		}
+#else
 		clients[0]->draw(cdisplay[0]);
 		rect.x = 0;
 		rect.y = 0;
 		rect.w = cdisplay[0]->w;
 		rect.h = cdisplay[0]->h;
-		SDL_BlitSurface(cdisplay[0], &rect, display, &rect);
-		SDL_Flip(display);
+		int blit_ret = SDL_BlitSurface(cdisplay[0], &rect, display, &rect);
+		if (blit_ret != 0)
+		{
+			printf("[RENDER-ERR] SDL_BlitSurface failed: %s\n", SDL_GetError());
+		}
+		if (!dumped_display_surfaces && (access("debug_map_surface.bmp", F_OK) == 0))
+		{
+			SDL_SaveBMP(cdisplay[0], "debug_cdisplay.bmp");
+			SDL_SaveBMP(display, "debug_display_preflip.bmp");
+			printf("[RENDER-DUMP] wrote debug_cdisplay.bmp and debug_display_preflip.bmp\n");
+		}
+		if (
+#ifdef MAC
+			false
+#else
+			(display->flags & SDL_DOUBLEBUF) != 0
+#endif
+		)
+		{
+			if (SDL_Flip(display) != 0)
+			{
+				printf("[RENDER-ERR] SDL_Flip failed: %s\n", SDL_GetError());
+				SDL_UpdateRect(display, 0, 0, 0, 0);
+			}
+		}
+		else
+		{
+			SDL_UpdateRect(display, 0, 0, 0, 0);
+		}
+		if (!dumped_display_surfaces && (access("debug_map_surface.bmp", F_OK) == 0))
+		{
+			SDL_SaveBMP(display, "debug_display_postflip.bmp");
+			printf("[RENDER-DUMP] wrote debug_display_postflip.bmp\n");
+			dumped_display_surfaces = true;
+		}
+#endif
 	}
 	
 }

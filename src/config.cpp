@@ -139,7 +139,8 @@ config::config(const char *cfile)
 				if (read_mode == 0)
 				{
 					#ifdef LINUX
-					if (sscanf(line_read, "Path = %[^\t\n\r]", all_names) == 1)
+					if ((sscanf(line_read, "Path = %[^\t\n\r]", all_names) == 1) ||
+						(sscanf(line_read, "Path=%[^\t\n\r]", all_names) == 1))
 					{
 						wordexp_t exp_result;
 						wordexp(all_names, &exp_result, 0);
@@ -158,7 +159,8 @@ config::config(const char *cfile)
 						printf("Lineage is located at: %s\n", lineage_dir);
 					}
 					#else
-					if (sscanf(line_read, "Path = %[^\t\n\r]", all_names) == 1)
+					if ((sscanf(line_read, "Path = %[^\t\n\r]", all_names) == 1) ||
+						(sscanf(line_read, "Path=%[^\t\n\r]", all_names) == 1))
 					{
 						lineage_dir = new char[strlen(line_read)];
 						strcpy(lineage_dir, all_names);
@@ -166,7 +168,8 @@ config::config(const char *cfile)
 					}
 					#endif
 					else 
-					if (sscanf(line_read, "NumServers = %d ", &num_servers) == 1)
+					if ((sscanf(line_read, "NumServers = %d ", &num_servers) == 1) ||
+						(sscanf(line_read, "NumServers=%d", &num_servers) == 1))
 					{
 						printf("There are %d servers\n", num_servers);
 						
@@ -201,15 +204,18 @@ config::config(const char *cfile)
 						strcpy(sdata[read_mode-1].server_name, all_names);
 						printf("Reading data for server named %s\n", sdata[read_mode-1].server_name);
 					}
-					else if (sscanf(line_read, "\tPort = %[^\t\n\r]", sdata[read_mode-1].port) == 1)
+					else if ((sscanf(line_read, "\tPort = %[^\t\n\r]", sdata[read_mode-1].port) == 1) ||
+							 (sscanf(line_read, "\tPort=%[^\t\n\r]", sdata[read_mode-1].port) == 1))
 					{
 						printf("Connect using port number %s\n", sdata[read_mode-1].port);
 					}
-					else if (sscanf(line_read, "\tGamePort = %[^\t\n\r]", sdata[read_mode-1].game_port) == 1)
+					else if ((sscanf(line_read, "\tGamePort = %[^\t\n\r]", sdata[read_mode-1].game_port) == 1) ||
+							 (sscanf(line_read, "\tGamePort=%[^\t\n\r]", sdata[read_mode-1].game_port) == 1))
 					{
 						printf("Connect using game port number %s\n", sdata[read_mode-1].game_port);
 					}
-					else if (sscanf(line_read, "\tNames = %[^\t\n\r]", all_names) == 1)
+					else if ((sscanf(line_read, "\tNames = %[^\t\n\r]", all_names) == 1) ||
+							 (sscanf(line_read, "\tNames=%[^\t\n\r]", all_names) == 1))
 					{
 						printf("Server IP address is ");
 						sdata[read_mode-1].num_names = 1;

@@ -1,5 +1,6 @@
 #include <SDL/SDL.h>
 #include <SDL/SDL_image.h>
+#include <stdlib.h>
 
 #include "drawmode/draw_char_sel.h"
 #include "drawmode/draw_game.h"
@@ -106,6 +107,11 @@ sdl_user::~sdl_user()
 tile *sdl_user::get_tiles()
 {
 	return map_tiles;
+}
+
+int sdl_user::get_num_map_tiles()
+{
+	return number_map_tiles;
 }
 
 void sdl_user::mouse_to(SDL_MouseMotionEvent *to)
@@ -367,13 +373,23 @@ void sdl_user::init()
 		throw "ERROR Loading configuration file.\n";
 	}
 	char *test;
-	test = (char*)getfiles->load_file("Sprite00.idx", 0, FILE_REGULAR1, 0);
+	test = (char*)getfiles->load_file("Sprite.idx", 0, FILE_REGULAR1, 0);
 	if (test == 0)
 	{
-		throw "Lineage Data not found";
+		test = (char*)getfiles->load_file("Sprite00.idx", 0, FILE_REGULAR1, 0);
+		if (test == 0)
+		{
+			throw "Lineage Data not found (Sprite.idx/Sprite00.idx)";
+		}
 	}
 	delete [] test;
-	lineage_font.init("Font/eng.fnt", this);	//TODO : make a client specific version of the font
+	if (!lineage_font.init("Font/eng.fnt", this))	//TODO : make a client specific version of the font
+	{
+		if (!lineage_font.init("Font/ENG.FNT", this))
+		{
+			lineage_font.init("font/eng.fnt", this);
+		}
+	}
 	
 	unsigned char *sprite_data;
 	int sprite_dlength;
@@ -489,9 +505,28 @@ void sdl_user::init()
 	load = (draw_loading*)get_drawmode(false);
 
 	//wait for the user to pick a server
+	const char *auto_server_pick = getenv("LINEAGE_AUTO_SERVER");
+	what_server = 2;
+	printf("Default server index is %d (Example server)\n", what_server);
+	if (auto_server_pick != 0)
+	{
+		what_server = atoi(auto_server_pick);
+		if ((what_server >= 0) && (what_server < main_config->get_num_servers()))
+		{
+			printf("Auto-selected server index %d from LINEAGE_AUTO_SERVER\n", what_server);
+		}
+		else
+		{
+			printf("Invalid LINEAGE_AUTO_SERVER value \"%s\", falling back to UI selection\n", auto_server_pick);
+			what_server = -1;
+		}
+	}
 	do
 	{
-		what_server = load->get_server_pick();
+		if (what_server == -1)
+		{
+			what_server = load->get_server_pick();
+		}
 		check_requests();
 	} while (what_server == -1);
 	

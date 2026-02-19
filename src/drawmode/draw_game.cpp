@@ -175,6 +175,7 @@ void draw_game::set_selected_char(lin_char_info *me)
 void draw_game::set_player_id(uint32_t newid)
 {
 	charid = newid;
+	printf("[PLAYER] set_player_id=0x%x\n", charid);
 }
 
 void draw_game::set_underwater(int underwater)
@@ -194,6 +195,11 @@ void draw_game::change_heading(uint32_t id, uint8_t heading)
 
 void draw_game::place_character(ground_item *info)
 {
+	if (info->id == charid)
+	{
+		printf("[PLAYER] place_character id=0x%x gfx=%u heading=%d pos=(%u,%u)\n",
+			info->id, info->gnd_icon, info->heading, info->x, info->y);
+	}
 	themap->move_sprite(info->id, info->x, info->y, info->gnd_icon, info->heading);
 	if (info->id == charid)
 	{
